@@ -19,6 +19,7 @@ import argparse
 import logging
 import os
 import sys
+import binascii 
 
 from pyasn1.codec.der import decoder, encoder
 
@@ -64,14 +65,14 @@ class GETST:
         adIfRelevant = decoder.decode(encTicketPart['authorization-data'][0]['ad-data'], asn1Spec=AD_IF_RELEVANT())[
             0]
         # So here we have the PAC
-        pacType = PACTYPE(str(adIfRelevant[0]['ad-data']))
+        pacType = PACTYPE(bytes(adIfRelevant[0]['ad-data']))
         buff = pacType['Buffers']
 
         for bufferN in range(pacType['cBuffers']):
             infoBuffer = PAC_INFO_BUFFER(buff)
             data = pacType['Buffers'][infoBuffer['Offset']-8:][:infoBuffer['cbBufferSize']]
             if logging.getLogger().level == logging.DEBUG:
-                print "TYPE 0x%x" % infoBuffer['ulType']
+                print("TYPE 0x%x" % infoBuffer['ulType'])
             if infoBuffer['ulType'] == 1:
                 type1 = TypeSerialization1(data)
                 # I'm skipping here 4 bytes with its the ReferentID for the pointer
@@ -80,56 +81,56 @@ class GETST:
                 kerbdata.fromString(newdata)
                 kerbdata.fromStringReferents(newdata[len(kerbdata.getData()):])
                 kerbdata.dump()
-                print
-                # If human is true, print human-friendly version
-                # if not, just do the raw dump
+                print()
+                # # If human is true, print human-friendly version
+                # # if not, just do the raw dump
                 if human:
-                    print
-                    print 'Username:', kerbdata['EffectiveName']
-                    print 'Domain SID:', kerbdata['LogonDomainId'].formatCanonical()
-                    print 'UserId:', kerbdata['UserId']
-                    print 'PrimaryGroupId', kerbdata['PrimaryGroupId']
-                    print 'Member of groups:'
+                    print()
+                    print('Username:', kerbdata['EffectiveName'])
+                    print('Domain SID:', kerbdata['LogonDomainId'].formatCanonical())
+                    print('UserId:', kerbdata['UserId'])
+                    print('PrimaryGroupId', kerbdata['PrimaryGroupId'])
+                    print('Member of groups:')
                     for group in kerbdata['GroupIds']:
-                        print '  ->   %d (attributes: %d)' % (group['RelativeId'],  group['Attributes'])
-                    print 'LogonServer: ', kerbdata['LogonServer']
-                    print 'LogonDomainName: ', kerbdata['LogonDomainName']
-                    print
-                    print 'Extra SIDS:'
+                        print('  ->   %d (attributes: %d)' % (group['RelativeId'],  group['Attributes']))
+                    print('LogonServer: ', kerbdata['LogonServer'])
+                    print('LogonDomainName: ', kerbdata['LogonDomainName'])
+                    print()
+                    print('Extra SIDS:')
                     for sid in kerbdata['ExtraSids']:
-                        print '  ->  ', sid['Sid'].formatCanonical()
+                        print('  ->  ', sid['Sid'].formatCanonical())
                     if kerbdata['ResourceGroupDomainSid']:
-                        print 'Extra domain groups found! Domain SID:'
-                        print kerbdata['ResourceGroupDomainSid'].formatCanonical()
-                        print 'Relative groups:'
+                        print('Extra domain groups found! Domain SID:')
+                        print(kerbdata['ResourceGroupDomainSid'].formatCanonical())
+                        print('Relative groups:')
                         for group in kerbdata['ResourceGroupIds']:
-                            print '  ->   %d (attributes: %d)' % (group['RelativeId'],  group['Attributes'])
+                            print('  ->   %d (attributes: %d)' % (group['RelativeId'],  group['Attributes']))
             elif infoBuffer['ulType'] == PAC_CLIENT_INFO_TYPE:
                 clientInfo = PAC_CLIENT_INFO(data)
                 if logging.getLogger().level == logging.DEBUG:
                     clientInfo.dump()
-                    print
+                    print()
             elif infoBuffer['ulType'] == PAC_SERVER_CHECKSUM:
                 signatureData = PAC_SIGNATURE_DATA(data)
                 if logging.getLogger().level == logging.DEBUG:
                     signatureData.dump()
-                    print
+                    print()
             elif infoBuffer['ulType'] == PAC_PRIVSVR_CHECKSUM:
                 signatureData = PAC_SIGNATURE_DATA(data)
                 if logging.getLogger().level == logging.DEBUG:
                     signatureData.dump()
-                    print
+                    print()
             elif infoBuffer['ulType'] == PAC_UPN_DNS_INFO:
                 upn = UPN_DNS_INFO(data)
                 if logging.getLogger().level == logging.DEBUG:
                     upn.dump()
-                    print data[upn['DnsDomainNameOffset']:]
-                    print
+                    print(data[upn['DnsDomainNameOffset']:])
+                    # print
             else:
                 hexdump(data)
 
             if logging.getLogger().level == logging.DEBUG:
-                print "#"*80
+                print("#"*80)
 
             buff = buff[len(infoBuffer):]
 
@@ -163,9 +164,9 @@ class GETST:
         except:
             # No cache present
             logging.error("Cache file not valid or not found")
-            return
+            raise
 
-        print
+        print()
         # Print TGT
         # For just decoding a TGS, use TGS_REP()
         decodedTGT = decoder.decode(tgt, asn1Spec = AS_REP())[0]
@@ -178,16 +179,16 @@ class GETST:
         newCipher = _enctype_table[int(decodedTGT['ticket']['enc-part']['etype'])]
 
         # hash / AES key for the TGT / TGS goes here
-        self.__nthash = 'yourhashhere'
+        self.__nthash = 'yourkeyhere'
         if self.__nthash != '':
-            key = Key(newCipher.enctype, self.__nthash.decode('hex'))
+            key = Key(newCipher.enctype, binascii.unhexlify(self.__nthash))
 
         try:
             # If is was plain U2U, this is the key
-            plainText = newCipher.decrypt(key, 2, str(cipherText))
+            plainText = newCipher.decrypt(key, 2, cipherText)
         except:
             # S4USelf + U2U uses this other key
-            plainText = cipher.decrypt(sessionKey, 2, str(cipherText))
+            plainText = cipher.decrypt(sessionKey, 2, cipherText)
 
         # Print PAC in human friendly form
         self.printPac(plainText, True)
@@ -199,7 +200,7 @@ class GETST:
             domain = options.target_domain
         else:
             domain = self.__domain
-        print domain
+        print(domain)
         tgs, cipher, oldSessionKey, sessionKey = getKerberosTGS(serverName, domain, self.__kdcHost, tgt, cipher, sessionKey, clientrealm=self.__domain)
         self.__saveFileName = self.__user
 
@@ -208,7 +209,7 @@ class GETST:
 
         if logging.getLogger().level == logging.DEBUG:
             logging.debug('TGS_REP')
-            print decodedTGS.prettyPrint()
+            print(decodedTGS.prettyPrint())
 
         # Get PAC
 
@@ -222,16 +223,16 @@ class GETST:
         newCipher = _enctype_table[int(decodedTGS['ticket']['enc-part']['etype'])]
 
         # hash / AES key for the TGT / TGS goes here
-        self.__nthash = 'yourhashhere'
+        self.__nthash = 'yourkeyhere'
         if self.__nthash != '':
-            key = Key(newCipher.enctype, self.__nthash.decode('hex'))
+            key = Key(newCipher.enctype, binascii.unhexlify(self.__nthash))
 
         try:
             # If is was plain U2U, this is the key
-            plainText = newCipher.decrypt(key, 2, str(cipherText))
+            plainText = newCipher.decrypt(key, 2, cipherText)
         except:
             # S4USelf + U2U uses this other key
-            plainText = cipher.decrypt(sessionKey, 2, str(cipherText))
+            plainText = cipher.decrypt(sessionKey, 2, cipherText)
 
         # Print PAC in human friendly form
         self.printPac(plainText)
@@ -242,7 +243,7 @@ class GETST:
 if __name__ == '__main__':
     # Init the example's logger theme
     logger.init()
-    print version.BANNER
+    print(version.BANNER)
 
     parser = argparse.ArgumentParser(add_help=True, description="Tool to decrypt and dump a PAC from a TGT/TGS"
                                                                 " (TGS requires modification) and request an ST"
@@ -287,8 +288,8 @@ if __name__ == '__main__':
 
         executer = GETST(username, password, domain, options)
         executer.run()
-    except Exception, e:
+    except Exception as e:
         if logging.getLogger().level == logging.DEBUG:
             import traceback
             traceback.print_exc()
-        print str(e)
+        print(str(e))
