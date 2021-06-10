@@ -33,16 +33,14 @@ class RPCLookup:
         }
 
     def __init__(self, username='', password='', domain='', port = None,
-                 hashes = None, domain_sids = False, maxRid=4000):
+                 hashes = None):
 
         self.__username = username
         self.__password = password
         self.__port = port
-        self.__maxRid = int(maxRid)
         self.__domain = domain
         self.__lmhash = ''
         self.__nthash = ''
-        self.__domain_sids = domain_sids
         if hashes is not None:
             self.__lmhash, self.__nthash = hashes.split(':')
 
@@ -52,8 +50,6 @@ class RPCLookup:
         stringbinding = epm.hept_map(remoteHost, nrpc.MSRPC_UUID_NRPC, protocol = 'ncacn_ip_tcp')
         logging.info('StringBinding %s'%stringbinding)
         rpctransport = transport.DCERPCTransportFactory(stringbinding)
-        # rpctransport.set_dport(self.__port)
-        print(remoteHost)
         rpctransport.setRemoteHost(remoteHost)
 
         if hasattr(rpctransport, 'set_credentials'):
@@ -61,14 +57,11 @@ class RPCLookup:
             rpctransport.set_credentials(self.__username, self.__password, self.__domain, self.__lmhash, self.__nthash)
 
         dce = rpctransport.get_dce_rpc()
-        # dce.set_auth_level(RPC_C_AUTHN_LEVEL_PKT_INTEGRITY)
         dce.connect()
         dce.bind(nrpc.MSRPC_UUID_NRPC)
         resp = nrpc.hNetrServerReqChallenge(dce, NULL, remoteName + '\x00', b'12345678')
-        resp.dump()
+        # resp.dump()
         serverChallenge = resp['ServerChallenge']
-
-        # self.__password = 'LongPassword01a'
 
         ntHash = unhexlify(self.__nthash)
 
@@ -78,17 +71,12 @@ class RPCLookup:
 
         try:
             resp = nrpc.hNetrServerAuthenticate3(dce, NULL, self.__username + '\x00', nrpc.NETLOGON_SECURE_CHANNEL_TYPE.TrustedDnsDomainSecureChannel,remoteName + '\x00',self.ppp, 0x600FFFFF )
-            resp.dump()
+            # resp.dump()
         except Exception as e:
             if str(e).find('STATUS_DOWNGRADE_DETECTED') < 0:
                 raise
 
         self.clientStoredCredential = pack('<Q', unpack('<Q',self.ppp)[0] + 10)
-
-        #dce.set_auth_type(RPC_C_AUTHN_NETLOGON)
-        #dce.set_auth_level(RPC_C_AUTHN_LEVEL_PKT_INTEGRITY)
-        #dce2 = dce.alter_ctx(nrpc.MSRPC_UUID_NRPC)
-        #dce2.set_session_key(self.sessionKey)
 
         return dce, rpctransport
 
@@ -122,7 +110,6 @@ if __name__ == '__main__':
                        'NetBIOS name and you cannot resolve it')
     group.add_argument('-port', choices=['135', '139', '445'], nargs='?', default='445', metavar="destination port",
                        help='Destination port to connect to SMB Server')
-    group.add_argument('-domain-sids', action='store_true', help='Enumerate Domain SIDs (will likely forward requests to the DC)')
 
     group = parser.add_argument_group('authentication')
 
@@ -155,13 +142,13 @@ if __name__ == '__main__':
     if options.target_ip is None:
         options.target_ip = remoteName
 
-    lookup = RPCLookup(username, password, domain, int(options.port), options.hashes, options.domain_sids)
+    lookup = RPCLookup(username, password, domain, int(options.port), options.hashes)
     dce, rpctransport = lookup.dump(remoteName, options.target_ip)
     request = nrpc.NetrGetForestTrustInformation()
     request['ServerName'] = NULL
     request['ComputerName'] = remoteName + '\x00'
     request['Authenticator'] = lookup.update_authenticator()
-    request['ReturnAuthenticator']['Credential'] = '\x00'*8
+    request['ReturnAuthenticator']['Credential'] = b'\x00'*8
     request['ReturnAuthenticator']['Timestamp'] = 0
     request['Flags'] = 0
     try:

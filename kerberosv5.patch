@@ -1,35 +1,31 @@
 diff --git a/impacket/krb5/kerberosv5.py b/impacket/krb5/kerberosv5.py
-index 0bff320..aafefa2 100644
+index 67b98271..2f46fde2 100644
 --- a/impacket/krb5/kerberosv5.py
 +++ b/impacket/krb5/kerberosv5.py
-@@ -314,7 +314,7 @@ def getKerberosTGT(clientName, password, domain, lmhash, nthash, aesKey='', kdcH
-
+@@ -338,7 +338,7 @@ def getKerberosTGT(clientName, password, domain, lmhash, nthash, aesKey='', kdcH
+ 
      return tgt, cipher, key, sessionKey
-
+ 
 -def getKerberosTGS(serverName, domain, kdcHost, tgt, cipher, sessionKey):
 +def getKerberosTGS(serverName, domain, kdcHost, tgt, cipher, sessionKey, clientrealm=None):
-
+ 
      # Decode the TGT
      try:
-@@ -338,9 +338,13 @@ def getKerberosTGS(serverName, domain, kdcHost, tgt, cipher, sessionKey):
-     authenticator = Authenticator()
-     authenticator['authenticator-vno'] = 5
-     authenticator['crealm'] = str(decodedTGT['crealm'])
--
-+    if clientrealm:
-+        authenticator['crealm'] = clientrealm.upper()
+@@ -366,6 +366,10 @@ def getKerberosTGS(serverName, domain, kdcHost, tgt, cipher, sessionKey):
      clientName = Principal()
      clientName.from_asn1( decodedTGT, 'crealm', 'cname')
+ 
 +    # Cross-domain fix
 +    if clientrealm:
 +        clientName.realm = clientrealm.upper()
-
++
      seq_set(authenticator, 'cname', clientName.components_to_asn1)
-
-@@ -422,7 +426,9 @@ def getKerberosTGS(serverName, domain, kdcHost, tgt, cipher, sessionKey):
+ 
+     now = datetime.datetime.utcnow()
+@@ -446,7 +450,9 @@ def getKerberosTGS(serverName, domain, kdcHost, tgt, cipher, sessionKey):
      spn = Principal()
      spn.from_asn1(res['ticket'], 'realm', 'sname')
-
+ 
 -    if spn.components[0] == serverName.components[0]:
 +    # Force this to always return, we don't want to try to follow
 +    # referral tickets
